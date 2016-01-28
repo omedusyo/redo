@@ -1,15 +1,25 @@
 
+{-# LANGUAGE StandaloneDeriving #-}
+
 import Control.Monad ( filterM )
+import Data.Map.Lazy ( insert, fromList, toList, adjust )
 import Data.Maybe ( listToMaybe )
+import Debug.Trace ( traceShow )
 import System.Directory ( renameFile, removeFile, doesFileExist )
-import System.Environment ( getArgs )
+import System.Environment ( getArgs, getEnvironment )
 import System.Exit ( ExitCode(..) )
 import System.FilePath ( hasExtension, replaceBaseName, takeBaseName )
 import System.IO ( hPutStrLn, stderr )
-import System.Process ( createProcess, waitForProcess, shell )
+import System.Process ( createProcess, waitForProcess, shell, CreateProcess(..), StdStream(..), CmdSpec(..) )
+
+deriving instance Show CreateProcess
+deriving instance Show StdStream
+deriving instance Show CmdSpec
 
 main :: IO ()
 main = getArgs >>= mapM_ redo
+
+traceShow' arg = traceShow arg arg
 
 redo :: String -> IO ()
 redo target = redoPath target >>= maybe printMissing redo'
@@ -22,7 +32,10 @@ redo target = redoPath target >>= maybe printMissing redo'
 
         redo' :: FilePath -> IO ()
         redo' path = do
-          (_, _, _, ph) <- (createProcess . shell) (command path)
+          oldEnv <- getEnvironment
+          let newEnv = toList $ adjust (++ ":.") "PATH" $ insert "REDO_TARGET" target $ fromList oldEnv
+
+          (_, _, _, ph) <- createProcess $ traceShow' $ (shell (command path)) { env = Just newEnv }
           exit <- waitForProcess ph
           case exit of
             ExitSuccess -> renameFile tmp target
